@@ -17,12 +17,12 @@ services:
       # Database Configuration
       - DATABASE_URL=postgresql://openhands_user:${POSTGRES_PASSWORD}@postgres:5432/openhands_enterprise
       
-      # ZAI Integration
-      - LLM_MODEL=${LLM_MODEL:-zai-code-planner}
+      # ZAI Integration (OpenAI-compatible)
+      - LLM_MODEL=${LLM_MODEL:-glm-4.6}
       - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.zai-code.com/v1}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.z.ai/api/paas/v4/}
       - LLM_CUSTOM_LLM_PROVIDER=${LLM_CUSTOM_LLM_PROVIDER:-zai}
-      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.1}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.6}
       - LLM_MAX_INPUT_TOKENS=${LLM_MAX_INPUT_TOKENS:-128000}
       - LLM_MAX_OUTPUT_TOKENS=${LLM_MAX_OUTPUT_TOKENS:-4096}
       

@@ -17,16 +17,20 @@ This guide explains how to integrate ZAI Code Plan credentials with OpenHands En
 Set these environment variables in your `.env` file or deployment configuration:
 
 ```bash
-# ZAI Configuration
-LLM_MODEL="zai-code-planner"
+# ZAI Configuration (using OpenAI-compatible SDK)
+LLM_MODEL="glm-4.6"
 LLM_API_KEY="your-zai-api-key-here"
-LLM_BASE_URL="https://api.zai-code.com/v1"
+LLM_BASE_URL="https://api.z.ai/api/paas/v4/"
 LLM_CUSTOM_LLM_PROVIDER="zai"
 
 # Optional ZAI-specific settings
-LLM_TEMPERATURE="0.1"
+LLM_TEMPERATURE="0.6"
 LLM_MAX_INPUT_TOKENS="128000"
 LLM_MAX_OUTPUT_TOKENS="4096"
+
+# For coding-specific tasks, you can also use:
+# LLM_MODEL="glm-4.5" (balanced performance)
+# LLM_MODEL="glm-4.32b-0414-128k" (large context)
 ```
 
 ### Method 2: Configuration File
@@ -35,21 +39,29 @@ Add to your `config.toml`:
 
 ```toml
 [llm]
-model = "zai-code-planner"
+model = "glm-4.6"
 api_key = "your-zai-api-key-here"
-base_url = "https://api.zai-code.com/v1"
+base_url = "https://api.z.ai/api/paas/v4/"
 custom_llm_provider = "zai"
-temperature = 0.1
+temperature = 0.6
 max_input_tokens = 128000
 max_output_tokens = 4096
 
 # Alternative: Dedicated ZAI section
 [llm.zai]
-model = "zai-code-planner"
+model = "glm-4.6"
 api_key = "your-zai-api-key-here"
-base_url = "https://api.zai-code.com/v1"
+base_url = "https://api.z.ai/api/paas/v4/"
 custom_llm_provider = "zai"
-temperature = 0.1
+temperature = 0.6
+
+# For coding tasks, you might prefer:
+[llm.zai-coding]
+model = "glm-4.5"
+api_key = "your-zai-api-key-here"
+base_url = "https://api.z.ai/api/paas/v4/"
+custom_llm_provider = "zai"
+temperature = 0.1  # Lower temperature for more deterministic code
 ```
 
 ### Method 3: Runtime Configuration (Web UI)
@@ -57,11 +69,11 @@ temperature = 0.1
 1. Access OpenHands Enterprise web interface
 2. Navigate to **Settings** → **LLM Configuration**
 3. Configure the following:
-   - **Model**: `zai-code-planner`
+   - **Model**: `glm-4.6` (or `glm-4.5` for coding)
    - **API Key**: Your ZAI API key
-   - **Base URL**: `https://api.zai-code.com/v1`
+   - **Base URL**: `https://api.z.ai/api/paas/v4/`
    - **Custom Provider**: `zai`
-   - **Temperature**: `0.1` (recommended for code planning)
+   - **Temperature**: `0.6` (recommended) or `0.1` for deterministic code
 4. Save configuration
 
 ### Method 4: Docker Environment
@@ -70,9 +82,9 @@ temperature = 0.1
 docker run -d \
   --name openhands-enterprise \
   -p 3000:3000 \
-  -e LLM_MODEL="zai-code-planner" \
+  -e LLM_MODEL="glm-4.6" \
   -e LLM_API_KEY="your-zai-api-key-here" \
-  -e LLM_BASE_URL="https://api.zai-code.com/v1" \
+  -e LLM_BASE_URL="https://api.z.ai/api/paas/v4/" \
   -e LLM_CUSTOM_LLM_PROVIDER="zai" \
   -v $(pwd)/workspace:/app/workspace \
   openhands-enterprise:latest
@@ -82,47 +94,47 @@ docker run -d \
 
 ### Supported ZAI Models
 
-Add these models to your configuration:
+Z.AI provides OpenAI-compatible models. Here are the recommended models for OpenHands:
 
 ```python
 # In openhands/utils/llm.py (if needed)
 SUPPORTED_MODELS.extend([
-    "zai-code-planner",
-    "zai/gpt-4",
-    "zai/claude-sonnet",
-    "zai-code-generator",
-    "zai-code-reviewer",
+    "glm-4.6",           # Latest model with enhanced reasoning
+    "glm-4.5",           # Balanced performance model
+    "glm-4.32b-0414-128k", # Large context model
 ])
 ```
 
 ### Model-Specific Settings
 
-#### ZAI Code Planner (Recommended)
+#### GLM-4.6 (Latest & Recommended)
 ```toml
-[llm.zai-planner]
-model = "zai-code-planner"
-temperature = 0.1          # Lower temperature for consistent planning
+[llm.zai-latest]
+model = "glm-4.6"
+temperature = 0.6          # Default temperature for balanced responses
 max_input_tokens = 128000  # Large context for complex projects
-max_output_tokens = 8192   # Detailed planning output
+max_output_tokens = 4096   # Standard output length
 top_p = 0.95
 ```
 
-#### ZAI Code Generator
+#### GLM-4.5 (Coding Optimized)
 ```toml
-[llm.zai-generator]
-model = "zai-code-generator"
-temperature = 0.3          # Slightly higher for creative solutions
-max_input_tokens = 64000
+[llm.zai-coding]
+model = "glm-4.5"
+temperature = 0.1          # Lower temperature for consistent code generation
+max_input_tokens = 128000
 max_output_tokens = 4096
+top_p = 0.95
 ```
 
-#### ZAI Code Reviewer
+#### GLM-4.32B-0414-128K (Large Context)
 ```toml
-[llm.zai-reviewer]
-model = "zai-code-reviewer"
-temperature = 0.05         # Very low for consistent analysis
-max_input_tokens = 32000
-max_output_tokens = 2048
+[llm.zai-large-context]
+model = "glm-4.32b-0414-128k"
+temperature = 0.6
+max_input_tokens = 128000  # Full 128K context
+max_output_tokens = 8192   # Larger output for complex tasks
+top_p = 0.95
 ```
 
 ## Authentication Setup
@@ -201,18 +213,18 @@ if __name__ == "__main__":
 
 ```bash
 # Test ZAI API directly
-curl -X POST "https://api.zai-code.com/v1/chat/completions" \
+curl -X POST "https://api.z.ai/api/paas/v4/chat/completions" \
   -H "Authorization: Bearer your-zai-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "zai-code-planner",
+    "model": "glm-4.6",
     "messages": [
       {
         "role": "user",
         "content": "Create a simple Python function that adds two numbers"
       }
     ],
-    "temperature": 0.1
+    "temperature": 0.6
   }'
 ```
 
@@ -220,24 +232,50 @@ curl -X POST "https://api.zai-code.com/v1/chat/completions" \
 
 ```python
 # Test script: test_zai_integration.py
-from openhands.llm.llm import LLM
+from openai import OpenAI
 
-def test_zai_llm_integration():
-    llm = LLM()
+def test_zai_direct_integration():
+    """Test direct ZAI API integration using OpenAI SDK"""
+    client = OpenAI(
+        api_key="your-zai-api-key",
+        base_url="https://api.z.ai/api/paas/v4/"
+    )
     
+    try:
+        response = client.chat.completions.create(
+            model="glm-4.6",
+            messages=[
+                {"role": "user", "content": "Create a Python function to calculate factorial"}
+            ],
+            temperature=0.6
+        )
+        print("✅ ZAI direct integration successful")
+        print(f"Response: {response.choices[0].message.content[:200]}...")
+        return True
+    except Exception as e:
+        print(f"❌ ZAI direct integration failed: {e}")
+        return False
+
+def test_zai_openhands_integration():
+    """Test ZAI through OpenHands LLM layer"""
+    from openhands.llm.llm import LLM
+    
+    llm = LLM()
     test_prompt = "Create a Python function to calculate factorial"
     
     try:
         response = llm.completion(test_prompt)
-        print("✅ ZAI LLM integration successful")
+        print("✅ ZAI OpenHands integration successful")
         print(f"Response: {response[:200]}...")
         return True
     except Exception as e:
-        print(f"❌ ZAI LLM integration failed: {e}")
+        print(f"❌ ZAI OpenHands integration failed: {e}")
         return False
 
 if __name__ == "__main__":
-    test_zai_llm_integration()
+    print("=== ZAI Integration Test ===")
+    test_zai_direct_integration()
+    test_zai_openhands_integration()
 ```
 
 ## Advanced Configuration
@@ -291,16 +329,69 @@ For enterprise ZAI deployments:
 
 ```toml
 [llm.zai-enterprise]
-model = "zai-enterprise-planner"
+model = "glm-4.6"
 api_key = "your-enterprise-zai-key"
-base_url = "https://enterprise.zai-code.com/v1"
+base_url = "https://api.z.ai/api/paas/v4/"
 custom_llm_provider = "zai"
 # Enterprise-specific settings
-enterprise_tenant_id = "your-tenant-id"
-custom_headers = {
-    "X-ZAI-Tenant": "your-tenant-id",
-    "X-ZAI-Environment": "production"
-}
+temperature = 0.6
+max_tokens = 4096
+```
+
+### Advanced ZAI Features
+
+#### Thinking Mode (Enhanced Reasoning)
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-zai-api-key",
+    base_url="https://api.z.ai/api/paas/v4/"
+)
+
+response = client.chat.completions.create(
+    model="glm-4.6",
+    messages=[
+        {"role": "user", "content": "Solve this complex math problem: ..."}
+    ],
+    extra_body={
+        "thinking": {
+            "type": "enabled",  # Enable thinking mode
+        },
+    }
+)
+```
+
+#### Function Calling
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_code",
+            "description": "Execute Python code and return results",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python code to execute"
+                    }
+                },
+                "required": ["code"]
+            }
+        }
+    }
+]
+
+response = client.chat.completions.create(
+    model="glm-4.6",
+    messages=[
+        {"role": "user", "content": "Calculate fibonacci(10)"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
 ```
 
 ## Performance Optimization
