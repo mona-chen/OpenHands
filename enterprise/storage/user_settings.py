@@ -4,7 +4,7 @@ from storage.base import Base
 
 
 class UserSettings(Base):  # type: ignore
-    __tablename__ = 'user_settings'
+    __tablename__ = "user_settings"
     id = Column(Integer, Identity(), primary_key=True)
     keycloak_user_id = Column(String, nullable=True, index=True)
     language = Column(String, nullable=True)
@@ -19,7 +19,7 @@ class UserSettings(Base):  # type: ignore
     remote_runtime_resource_factor = Column(Integer, nullable=True)
     enable_default_condenser = Column(Boolean, nullable=False, default=True)
     condenser_max_size = Column(Integer, nullable=True)
-    user_consents_to_analytics = Column(Boolean, nullable=True)
+    # user_consents_to_analytics = Column(Boolean, nullable=True)  # Telemetry control via env vars
     billing_margin = Column(Float, nullable=True, default=DEFAULT_BILLING_MARGIN)
     enable_sound_notifications = Column(Boolean, nullable=True, default=False)
     enable_proactive_conversation_starters = Column(

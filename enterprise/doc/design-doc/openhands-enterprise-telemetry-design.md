@@ -1,5 +1,7 @@
 # OpenHands Enterprise Usage Telemetry Service
 
+**DISABLED: This telemetry system is controlled by ENABLE_TELEMETRY_INFRASTRUCTURE environment variable and is disabled by default.**
+
 ## Table of Contents
 
 1. [Introduction](#1-introduction)

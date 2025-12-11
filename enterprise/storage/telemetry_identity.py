@@ -2,6 +2,8 @@
 
 This model stores persistent identity information that must survive container restarts
 for the OpenHands Enterprise Telemetry Service.
+
+DISABLED: Telemetry functionality controlled by ENABLE_TELEMETRY_INFRASTRUCTURE environment variable.
 """
 
 from datetime import UTC, datetime
@@ -22,8 +24,8 @@ class TelemetryIdentity(Base):  # type: ignore
     Operational data like timestamps are derived from the telemetry_metrics table.
     """
 
-    __tablename__ = 'telemetry_replicated_identity'
-    __table_args__ = (CheckConstraint('id = 1', name='single_identity_row'),)
+    __tablename__ = "telemetry_replicated_identity"
+    __table_args__ = (CheckConstraint("id = 1", name="single_identity_row"),)
 
     id = Column(Integer, primary_key=True, default=1)
     customer_id = Column(String(255), nullable=True)
@@ -57,9 +59,9 @@ class TelemetryIdentity(Base):  # type: ignore
 
         # Set defaults for fields that would normally be set by SQLAlchemy
         now = datetime.now(UTC)
-        if not hasattr(self, 'created_at') or self.created_at is None:
+        if not hasattr(self, "created_at") or self.created_at is None:
             self.created_at = now
-        if not hasattr(self, 'updated_at') or self.updated_at is None:
+        if not hasattr(self, "updated_at") or self.updated_at is None:
             self.updated_at = now
 
         # Force id to be 1 to maintain single-row constraint

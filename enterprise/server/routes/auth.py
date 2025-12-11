@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal, Optional
 from urllib.parse import quote
 
-import posthog
+import os
+import posthog  # Controlled by ENABLE_POSTHOG_TELEMETRY environment variable
 from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import SecretStr
@@ -33,10 +34,10 @@ from openhands.server.user_auth import get_access_token
 from openhands.server.user_auth.user_auth import get_user_auth
 
 with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
+    warnings.simplefilter("ignore")
 
-api_router = APIRouter(prefix='/api')
-oauth_router = APIRouter(prefix='/oauth')
+api_router = APIRouter(prefix="/api")
+oauth_router = APIRouter(prefix="/oauth")
 
 token_manager = TokenManager()
 
@@ -51,9 +52,9 @@ def set_response_cookie(
 ):
     # Create a signed JWT token
     cookie_data = {
-        'access_token': keycloak_access_token,
-        'refresh_token': keycloak_refresh_token,
-        'accepted_tos': accepted_tos,
+        "access_token": keycloak_access_token,
+        "refresh_token": keycloak_refresh_token,
+        "accepted_tos": accepted_tos,
     }
     signed_token = sign_token(cookie_data, config.jwt_secret.get_secret_value())  # type: ignore
 
@@ -61,7 +62,7 @@ def set_response_cookie(
     domain = get_cookie_domain(request)
     if domain:
         response.set_cookie(
-            key='keycloak_auth',
+            key="keycloak_auth",
             value=signed_token,
             domain=domain,
             httponly=True,
@@ -70,7 +71,7 @@ def set_response_cookie(
         )
     else:
         response.set_cookie(
-            key='keycloak_auth',
+            key="keycloak_auth",
             value=signed_token,
             httponly=True,
             secure=secure,
@@ -82,22 +83,22 @@ def get_cookie_domain(request: Request) -> str | None:
     # for now just use the full hostname except for staging stacks.
     return (
         None
-        if (request.url.hostname or '').endswith('staging.all-hand.dev')
+        if (request.url.hostname or "").endswith("staging.all-hand.dev")
         else request.url.hostname
     )
 
 
-def get_cookie_samesite(request: Request) -> Literal['lax', 'strict']:
+def get_cookie_samesite(request: Request) -> Literal["lax", "strict"]:
     # for localhost and feature/staging stacks we set it to 'lax' as the cookie domain won't allow 'strict'
     return (
-        'lax'
-        if request.url.hostname == 'localhost'
-        or (request.url.hostname or '').endswith('staging.all-hands.dev')
-        else 'strict'
+        "lax"
+        if request.url.hostname == "localhost"
+        or (request.url.hostname or "").endswith("staging.all-hands.dev")
+        else "strict"
     )
 
 
-@oauth_router.get('/keycloak/callback')
+@oauth_router.get("/keycloak/callback")
 async def keycloak_callback(
     request: Request,
     code: Optional[str] = None,
@@ -109,17 +110,17 @@ async def keycloak_callback(
     if not code:
         # check if this is a forward from the account linking page
         if (
-            error == 'temporarily_unavailable'
-            and error_description == 'authentication_expired'
+            error == "temporarily_unavailable"
+            and error_description == "authentication_expired"
         ):
             return RedirectResponse(redirect_url, status_code=302)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Missing code in request params'},
+            content={"error": "Missing code in request params"},
         )
-    scheme = 'http' if request.url.hostname == 'localhost' else 'https'
-    redirect_uri = f'{scheme}://{request.url.netloc}{request.url.path}'
-    logger.debug(f'code: {code}, redirect_uri: {redirect_uri}')
+    scheme = "http" if request.url.hostname == "localhost" else "https"
+    redirect_uri = f"{scheme}://{request.url.netloc}{request.url.path}"
+    logger.debug(f"code: {code}, redirect_uri: {redirect_uri}")
 
     (
         keycloak_access_token,
@@ -128,96 +129,102 @@ async def keycloak_callback(
     if not keycloak_access_token or not keycloak_refresh_token:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Problem retrieving Keycloak tokens'},
+            content={"error": "Problem retrieving Keycloak tokens"},
         )
 
     user_info = await token_manager.get_user_info(keycloak_access_token)
-    logger.debug(f'user_info: {user_info}')
-    if ROLE_CHECK_ENABLED and 'roles' not in user_info:
+    logger.debug(f"user_info: {user_info}")
+    if ROLE_CHECK_ENABLED and "roles" not in user_info:
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={'error': 'Missing required role'},
+            content={"error": "Missing required role"},
         )
 
-    if 'sub' not in user_info or 'preferred_username' not in user_info:
+    if "sub" not in user_info or "preferred_username" not in user_info:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Missing user ID or username in response'},
+            content={"error": "Missing user ID or username in response"},
         )
 
-    user_id = user_info['sub']
+    user_id = user_info["sub"]
     # default to github IDP for now.
     # TODO: remove default once Keycloak is updated universally with the new attribute.
-    idp: str = user_info.get('identity_provider', ProviderType.GITHUB.value)
-    logger.info(f'Full IDP is {idp}')
-    idp_type = 'oidc'
-    if ':' in idp:
-        idp, idp_type = idp.rsplit(':', 1)
+    idp: str = user_info.get("identity_provider", ProviderType.GITHUB.value)
+    logger.info(f"Full IDP is {idp}")
+    idp_type = "oidc"
+    if ":" in idp:
+        idp, idp_type = idp.rsplit(":", 1)
         idp_type = idp_type.lower()
 
     await token_manager.store_idp_tokens(
         ProviderType(idp), user_id, keycloak_access_token
     )
 
-    username = user_info['preferred_username']
+    username = user_info["preferred_username"]
     if user_verifier.is_active() and not user_verifier.is_user_allowed(username):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={'error': 'Not authorized via waitlist'},
+            content={"error": "Not authorized via waitlist"},
         )
 
     valid_offline_token = (
-        await token_manager.validate_offline_token(user_id=user_info['sub'])
-        if idp_type != 'saml'
+        await token_manager.validate_offline_token(user_id=user_info["sub"])
+        if idp_type != "saml"
         else True
     )
 
     logger.debug(
-        f'keycloakAccessToken: {keycloak_access_token}, keycloakUserId: {user_id}'
+        f"keycloakAccessToken: {keycloak_access_token}, keycloakUserId: {user_id}"
     )
 
-    # adding in posthog tracking
-
-    # If this is a feature environment, add "FEATURE_" prefix to user_id for PostHog
-    posthog_user_id = f'FEATURE_{user_id}' if IS_FEATURE_ENV else user_id
-
-    try:
-        posthog.set(
-            distinct_id=posthog_user_id,
-            properties={
-                'user_id': posthog_user_id,
-                'original_user_id': user_id,
-                'is_feature_env': IS_FEATURE_ENV,
-            },
-        )
-    except Exception as e:
-        logger.error(
-            'auth:posthog_set:failed',
-            extra={
-                'user_id': user_id,
-                'error': str(e),
-            },
-        )
-        # Continue execution as this is not critical
-
-    logger.info(
-        'user_logged_in',
-        extra={
-            'idp': idp,
-            'idp_type': idp_type,
-            'posthog_user_id': posthog_user_id,
-            'is_feature_env': IS_FEATURE_ENV,
-        },
+    # PostHog tracking - controlled by ENABLE_POSTHOG_TELEMETRY environment variable
+    enable_posthog_telemetry = (
+        os.environ.get("ENABLE_POSTHOG_TELEMETRY", "false").lower() == "true"
     )
+
+    if enable_posthog_telemetry:
+        # If this is a feature environment, add "FEATURE_" prefix to user_id for PostHog
+        posthog_user_id = f"FEATURE_{user_id}" if IS_FEATURE_ENV else user_id
+
+        try:
+            posthog.set(
+                distinct_id=posthog_user_id,
+                properties={
+                    "user_id": posthog_user_id,
+                    "original_user_id": user_id,
+                    "is_feature_env": IS_FEATURE_ENV,
+                },
+            )
+        except Exception as e:
+            logger.error(
+                "auth:posthog_set:failed",
+                extra={
+                    "user_id": user_id,
+                    "error": str(e),
+                },
+            )
+            # Continue execution as this is not critical
+
+    # Include posthog_user_id in logs only if telemetry is enabled
+    log_extra = {
+        "idp": idp,
+        "idp_type": idp_type,
+        "is_feature_env": IS_FEATURE_ENV,
+    }
+
+    if enable_posthog_telemetry:
+        log_extra["posthog_user_id"] = posthog_user_id
+
+    logger.info("user_logged_in", extra=log_extra)
 
     if not valid_offline_token:
         redirect_url = (
-            f'{KEYCLOAK_SERVER_URL_EXT}/realms/{KEYCLOAK_REALM_NAME}/protocol/openid-connect/auth'
-            f'?client_id={KEYCLOAK_CLIENT_ID}&response_type=code'
-            f'&kc_idp_hint={idp}'
-            f'&redirect_uri={scheme}%3A%2F%2F{request.url.netloc}%2Foauth%2Fkeycloak%2Foffline%2Fcallback'
-            f'&scope=openid%20email%20profile%20offline_access'
-            f'&state={state}'
+            f"{KEYCLOAK_SERVER_URL_EXT}/realms/{KEYCLOAK_REALM_NAME}/protocol/openid-connect/auth"
+            f"?client_id={KEYCLOAK_CLIENT_ID}&response_type=code"
+            f"&kc_idp_hint={idp}"
+            f"&redirect_uri={scheme}%3A%2F%2F{request.url.netloc}%2Foauth%2Fkeycloak%2Foffline%2Fcallback"
+            f"&scope=openid%20email%20profile%20offline_access"
+            f"&state={state}"
         )
 
     config = get_config()
@@ -231,9 +238,9 @@ async def keycloak_callback(
 
     # If the user hasn't accepted the TOS, redirect to the TOS page
     if not has_accepted_tos:
-        encoded_redirect_url = quote(redirect_url, safe='')
+        encoded_redirect_url = quote(redirect_url, safe="")
         tos_redirect_url = (
-            f'{request.base_url}accept-tos?redirect_url={encoded_redirect_url}'
+            f"{request.base_url}accept-tos?redirect_url={encoded_redirect_url}"
         )
         response = RedirectResponse(tos_redirect_url, status_code=302)
     else:
@@ -244,7 +251,7 @@ async def keycloak_callback(
         response=response,
         keycloak_access_token=keycloak_access_token,
         keycloak_refresh_token=keycloak_refresh_token,
-        secure=True if scheme == 'https' else False,
+        secure=True if scheme == "https" else False,
         accepted_tos=has_accepted_tos,
     )
 
@@ -255,18 +262,18 @@ async def keycloak_callback(
     return response
 
 
-@oauth_router.get('/keycloak/offline/callback')
+@oauth_router.get("/keycloak/offline/callback")
 async def keycloak_offline_callback(code: str, state: str, request: Request):
     if not code:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Missing code in request params'},
+            content={"error": "Missing code in request params"},
         )
-    scheme = 'https'
-    if request.url.hostname == 'localhost':
-        scheme = 'http'
-    redirect_uri = f'{scheme}://{request.url.netloc}{request.url.path}'
-    logger.debug(f'code: {code}, redirect_uri: {redirect_uri}')
+    scheme = "https"
+    if request.url.hostname == "localhost":
+        scheme = "http"
+    redirect_uri = f"{scheme}://{request.url.netloc}{request.url.path}"
+    logger.debug(f"code: {code}, redirect_uri: {redirect_uri}")
 
     (
         keycloak_access_token,
@@ -275,49 +282,49 @@ async def keycloak_offline_callback(code: str, state: str, request: Request):
     if not keycloak_access_token or not keycloak_refresh_token:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Problem retrieving Keycloak tokens'},
+            content={"error": "Problem retrieving Keycloak tokens"},
         )
 
     user_info = await token_manager.get_user_info(keycloak_access_token)
-    logger.debug(f'user_info: {user_info}')
-    if 'sub' not in user_info:
+    logger.debug(f"user_info: {user_info}")
+    if "sub" not in user_info:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={'error': 'Missing Keycloak ID in response'},
+            content={"error": "Missing Keycloak ID in response"},
         )
 
     await token_manager.store_offline_token(
-        user_id=user_info['sub'], offline_token=keycloak_refresh_token
+        user_id=user_info["sub"], offline_token=keycloak_refresh_token
     )
 
     return RedirectResponse(state if state else request.base_url, status_code=302)
 
 
-@oauth_router.get('/github/callback')
+@oauth_router.get("/github/callback")
 async def github_dummy_callback(request: Request):
     """Callback for GitHub that just forwards the user to the app base URL."""
     return RedirectResponse(request.base_url, status_code=302)
 
 
-@api_router.post('/authenticate')
+@api_router.post("/authenticate")
 async def authenticate(request: Request):
     try:
         await get_access_token(request)
         return JSONResponse(
-            status_code=status.HTTP_200_OK, content={'message': 'User authenticated'}
+            status_code=status.HTTP_200_OK, content={"message": "User authenticated"}
         )
     except Exception:
         # For any error during authentication, clear the auth cookie and return 401
         response = JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={'error': 'User is not authenticated'},
+            content={"error": "User is not authenticated"},
         )
 
         # Delete the auth cookie if it exists
-        keycloak_auth_cookie = request.cookies.get('keycloak_auth')
+        keycloak_auth_cookie = request.cookies.get("keycloak_auth")
         if keycloak_auth_cookie:
             response.delete_cookie(
-                key='keycloak_auth',
+                key="keycloak_auth",
                 domain=get_cookie_domain(request),
                 samesite=get_cookie_samesite(request),
             )
@@ -325,7 +332,7 @@ async def authenticate(request: Request):
         return response
 
 
-@api_router.post('/accept_tos')
+@api_router.post("/accept_tos")
 async def accept_tos(request: Request):
     user_auth: SaasUserAuth = await get_user_auth(request)
     access_token = await user_auth.get_access_token()
@@ -334,16 +341,16 @@ async def accept_tos(request: Request):
 
     if not access_token or not refresh_token or not user_id:
         logger.warning(
-            f'accept_tos: One or more is None: access_token {access_token}, refresh_token {refresh_token}, user_id {user_id}'
+            f"accept_tos: One or more is None: access_token {access_token}, refresh_token {refresh_token}, user_id {user_id}"
         )
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={'error': 'User is not authenticated'},
+            content={"error": "User is not authenticated"},
         )
 
     # Get redirect URL from request body
     body = await request.json()
-    redirect_url = body.get('redirect_url', str(request.base_url))
+    redirect_url = body.get("redirect_url", str(request.base_url))
 
     # Update user settings with TOS acceptance
     with session_maker() as session:
@@ -367,10 +374,10 @@ async def accept_tos(request: Request):
 
         session.commit()
 
-    logger.info(f'User {user_id} accepted TOS')
+    logger.info(f"User {user_id} accepted TOS")
 
     response = JSONResponse(
-        status_code=status.HTTP_200_OK, content={'redirect_url': redirect_url}
+        status_code=status.HTTP_200_OK, content={"redirect_url": redirect_url}
     )
 
     set_response_cookie(
@@ -378,23 +385,23 @@ async def accept_tos(request: Request):
         response=response,
         keycloak_access_token=access_token.get_secret_value(),
         keycloak_refresh_token=refresh_token.get_secret_value(),
-        secure=False if request.url.hostname == 'localhost' else True,
+        secure=False if request.url.hostname == "localhost" else True,
         accepted_tos=True,
     )
     return response
 
 
-@api_router.post('/logout')
+@api_router.post("/logout")
 async def logout(request: Request):
     # Always create the response object first to ensure we can return it even if errors occur
     response = JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={'message': 'User logged out'},
+        content={"message": "User logged out"},
     )
 
     # Always delete the cookie regardless of what happens
     response.delete_cookie(
-        key='keycloak_auth',
+        key="keycloak_auth",
         domain=get_cookie_domain(request),
         samesite=get_cookie_samesite(request),
     )
@@ -407,26 +414,26 @@ async def logout(request: Request):
             await token_manager.logout(refresh_token)
     except Exception as e:
         # Log any errors but don't fail the request
-        logger.debug(f'Error during logout: {str(e)}')
+        logger.debug(f"Error during logout: {str(e)}")
         # We still want to clear the cookie and return success
 
     return response
 
 
-@api_router.get('/refresh-tokens', response_model=TokenResponse)
+@api_router.get("/refresh-tokens", response_model=TokenResponse)
 async def refresh_tokens(
     request: Request,
     provider: ProviderType,
     sid: str,
-    x_session_api_key: Annotated[str | None, Header(alias='X-Session-API-Key')],
+    x_session_api_key: Annotated[str | None, Header(alias="X-Session-API-Key")],
 ) -> TokenResponse:
     """Return the latest token for a given provider."""
     user_id = _get_user_id(sid)
     session_api_key = await _get_session_api_key(user_id, sid)
     if session_api_key != x_session_api_key:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Forbidden')
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    logger.info(f'Refreshing token for conversation {sid}')
+    logger.info(f"Refreshing token for conversation {sid}")
     provider_handler = ProviderHandler(
         create_provider_tokens_object([provider]), external_auth_id=user_id
     )

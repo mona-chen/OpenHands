@@ -1,0 +1,210 @@
+version: '3.8'
+
+services:
+  # Main OpenHands Enterprise Application
+  openhands-enterprise:
+    build:
+      context: .
+      dockerfile: enterprise/Dockerfile
+      args:
+        # Build-time telemetry controls
+        ENABLE_EXTERNAL_TELEMETRY: ${ENABLE_EXTERNAL_TELEMETRY:-false}
+        ENABLE_PROMETHEUS_METRICS: ${ENABLE_PROMETHEUS_METRICS:-false}
+    container_name: openhands-enterprise
+    ports:
+      - "${OPENHANDS_PORT:-3000}:3000"
+    environment:
+      # Database Configuration
+      - DATABASE_URL=postgresql://openhands_user:${POSTGRES_PASSWORD}@postgres:5432/openhands_enterprise
+      
+      # ZAI Integration
+      - LLM_MODEL=${LLM_MODEL:-zai-code-planner}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.zai-code.com/v1}
+      - LLM_CUSTOM_LLM_PROVIDER=${LLM_CUSTOM_LLM_PROVIDER:-zai}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.1}
+      - LLM_MAX_INPUT_TOKENS=${LLM_MAX_INPUT_TOKENS:-128000}
+      - LLM_MAX_OUTPUT_TOKENS=${LLM_MAX_OUTPUT_TOKENS:-4096}
+      
+      # GitHub OAuth (Enterprise Features)
+      - GITHUB_APP_CLIENT_ID=${GITHUB_APP_CLIENT_ID}
+      - GITHUB_APP_WEBHOOK_SECRET=${GITHUB_APP_WEBHOOK_SECRET}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+      
+      # Telemetry Controls (Privacy-First Defaults)
+      - ENABLE_POSTHOG_TELEMETRY=${ENABLE_POSTHOG_TELEMETRY:-false}
+      - ENABLE_EXTERNAL_TELEMETRY=${ENABLE_EXTERNAL_TELEMETRY:-false}
+      - ENABLE_PROMETHEUS_METRICS=${ENABLE_PROMETHEUS_METRICS:-false}
+      - ENABLE_DATADOG_TELEMETRY=${ENABLE_DATADOG_TELEMETRY:-false}
+      - ENABLE_TELEMETRY_INFRASTRUCTURE=${ENABLE_TELEMETRY_INFRASTRUCTURE:-false}
+      
+      # Application Settings
+      - FRONTEND_DIRECTORY=${FRONTEND_DIRECTORY:-./frontend/build}
+      - HIDE_LLM_SETTINGS=${HIDE_LLM_SETTINGS:-false}
+      - IS_FEATURE_ENV=${IS_FEATURE_ENV:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      
+      # Optional Features
+      - ENABLE_BILLING=${ENABLE_BILLING:-false}
+      - ENABLE_JIRA=${ENABLE_JIRA:-false}
+      - ENABLE_JIRA_DC=${ENABLE_JIRA_DC:-false}
+      - ENABLE_LINEAR=${ENABLE_LINEAR:-false}
+      - ENABLE_ENTERPRISE_SSO=${ENABLE_ENTERPRISE_SSO:-false}
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - openhands_workspace:/app/workspace
+      - openhands_cache:/tmp/cache
+      - openhands_file_store:/tmp/file_store
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - openhands-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openhands-postgres
+    environment:
+      POSTGRES_DB: openhands_enterprise
+      POSTGRES_USER: openhands_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openhands_user -d openhands_enterprise"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openhands-network
+    shm_size: 128mb
+
+  # Redis Cache (Optional but Recommended)
+  redis:
+    image: redis:7-alpine
+    container_name: openhands-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - openhands-network
+
+  # Nginx Reverse Proxy (Production Ready)
+  nginx:
+    image: nginx:alpine
+    container_name: openhands-nginx
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - openhands-enterprise
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openhands-network
+
+  # Database Migration Runner (One-time)
+  migrate:
+    build:
+      context: .
+      dockerfile: enterprise/Dockerfile
+    container_name: openhands-migrate
+    environment:
+      - DATABASE_URL=postgresql://openhands_user:${POSTGRES_PASSWORD}@postgres:5432/openhands_enterprise
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./enterprise:/app/enterprise
+    command: >
+      sh -c "
+        echo 'Waiting for database to be ready...' &&
+        while ! pg_isready -h postgres -U openhands_user -d openhands_enterprise; do
+          echo 'Database not ready, waiting...'
+          sleep 2
+        done &&
+        echo 'Database is ready, running migrations...' &&
+        cd /app/enterprise &&
+        alembic upgrade head &&
+        echo 'Migrations completed successfully!'
+      "
+    networks:
+      - openhands-network
+
+  # Health Check Service
+  health-check:
+    image: curlimages/curl:latest
+    container_name: openhands-health-check
+    depends_on:
+      openhands-enterprise:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo '=== OpenHands Enterprise Health Check ===' &&
+        echo 'Testing application health...' &&
+        curl -f http://openhands-enterprise:3000/api/readiness || exit 1 &&
+        echo '✅ Application is healthy' &&
+        echo 'Testing ZAI integration...' &&
+        curl -f http://openhands-enterprise:3000/api/health || exit 1 &&
+        echo '✅ ZAI integration is working' &&
+        echo '=== All systems operational ==='
+      "
+    networks:
+      - openhands-network
+
+# Named Volumes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  openhands_workspace:
+    driver: local
+  openhands_cache:
+    driver: local
+  openhands_file_store:
+    driver: local
+  nginx_logs:
+    driver: local
+
+# Networks
+networks:
+  openhands-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
