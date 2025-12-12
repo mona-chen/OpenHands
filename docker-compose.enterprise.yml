@@ -14,8 +14,9 @@ services:
     ports:
       - "${OPENHANDS_PORT:-3000}:3000"
     environment:
-      # Database Configuration
-      - DATABASE_URL=postgresql://openhands_user:${POSTGRES_PASSWORD}@postgres:5432/openhands_enterprise
+      # Database Configuration (External - Commented out)
+      # - DATABASE_URL=postgresql://openhands_user:${POSTGRES_PASSWORD}@postgres:5432/openhands_enterprise
+      # Use external PostgreSQL with DATABASE_URL environment variable
       
       # ZAI Integration (OpenAI-compatible)
       - LLM_MODEL=${LLM_MODEL:-glm-4.6}
@@ -25,8 +26,8 @@ services:
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.6}
       - LLM_MAX_INPUT_TOKENS=${LLM_MAX_INPUT_TOKENS:-128000}
       - LLM_MAX_OUTPUT_TOKENS=${LLM_MAX_OUTPUT_TOKENS:-4096}
-      # Redis configuration (using default, no auth for container-to-container)
-      - REDIS_PASSWORD=
+      # Redis configuration (external Redis server)
+      - REDIS_URL=redis://default:4f4vd4z253Fz0XB5VSjN0QQAcThQV7YDLUpmsEycq3T6n1Y4P7RH7lfdnHmEpDkq@tsokg8sw8ss4oog40oc8wwow:6379/0
       
       # GitHub OAuth (Enterprise Features)
       - GITHUB_APP_CLIENT_ID=${GITHUB_APP_CLIENT_ID}
@@ -57,8 +58,6 @@ services:
       
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - openhands_workspace:/app/workspace
@@ -98,25 +97,6 @@ services:
     networks:
       - openhands-network
     shm_size: 256mb
-
-  # Redis Cache (Optional but Recommended)
-  redis:
-    image: redis:7-alpine
-    container_name: openhands-redis
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - openhands-network
 
   # Nginx Reverse Proxy (Production Ready)
   nginx:
@@ -194,8 +174,6 @@ services:
 # Named Volumes
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   openhands_workspace:
     driver: local
